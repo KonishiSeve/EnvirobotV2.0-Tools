@@ -27,7 +27,7 @@ class LogFile:
                     #state key
                     else:
                         self.state_keys.append(key)
-    
+
     #read the next variable values
     def read(self):
         if self.file_operation == "r":

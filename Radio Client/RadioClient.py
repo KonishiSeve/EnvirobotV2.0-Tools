@@ -245,7 +245,7 @@ if __name__ == "__main__":
             #Read all mappings
             elif(command[0] == "mapr"): #read all the mappings
                 map_count = radio.reg_read_8(0x3F0)
-                if(map_count>0xe0):
+                if(map_count>=0xe0):
                     print("[Error {0}] Mapping access error, please retry".format(hex(map_count)))
                     continue
                 print("mappings: {0}".format(map_count))
