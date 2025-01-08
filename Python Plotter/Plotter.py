@@ -20,33 +20,34 @@ import threading
 import queue
 from LogLib import LogFile
 
-#====================== #
-#===== PARAMETERS ===== #
-#====================== #
+#=========================== #
+#===== USER PARAMETERS ===== #
+#=========================== #
 # === Hyper parameters === #
 number_modules = 4      # number of modules/joints (at least 1), does not include the tail or the head
 
 # === default CPG parameters === #
-frequency = 0.5         # oscillator frequency
+frequency = 1           # oscillator frequency
 direction = 0           # turning direction (positive/negative) and amplitude
-amplc = 0.3             # defines the amplitude of the first joint (closest to head)
-amplh = 0.5             # defines the amplitude of the last joint (furthest from head)
+amplc = 0.1             # defines the amplitude of the first joint (closest to head)
+amplh = 0.3             # defines the amplitude of the last joint (furthest from head)
 nwave = 1               # number of waves peaks that can be seen on the robot at the same time
 coupling_strength = 50  # speed at which the phase difference between coupled oscillators converges
 a_r = 10                # speed at which the amplitudes of the oscillators converge
 
 # === Computing parameters === #
-use_cpp_version = True   # use the C++ implementation that is compiled into a .dll (did not work on personnal laptop, only lab desktop)
+use_cpp_version = False   # use the C++ implementation that is compiled into a .dll (did not work on personnal laptop, only lab desktop)
 file_save = False        # saves the joint setpoints and timebase to a csv file
-delta_ms = 1             # integration stepsize in milliseconds (lower is more expensive)
+delta_ms = 10             # integration stepsize in milliseconds (lower is more expensive)
 
 # === Plotting parameters === #
-plot_robot_pose = True  # Plot the robot pose in real time
+plot_robot_pose = False  # Plot the robot pose in real time
+plot_cpg_states = True      # Plot the oscillator states (if not reading from input file)
 plot_power = True       # Plot the power consumption (if in input file)
 plot_energy = True      # Plot the energy consumption (if in input file)
 fps = 30                # animation frames per seconds (higher is more expensive)
 speed = 1               # animation speed multiplier (higher is more expensive)
-duration = 120          # animation duration in seconds
+duration = 10          # animation duration in seconds
 
 #============================#
 #===== GLOBAL VARIABLES =====#
@@ -110,8 +111,14 @@ def shell_thread():
 
 #CPG computation thread
 #Compute the CPG joint positions or reads them from the input file
+cpg_r_history = None
+cpg_dr_history = None
+cpg_ddr_history = None
+cpg_theta_history = None
+cpg_dtheta_history = None
 def cpg_thread():
     global stop, controller, delta_ms, number_modules, plot_power, plot_energy
+    global cpg_r_history, cpg_dr_history, cpg_ddr_history, cpg_theta_history, cpg_dtheta_history
     stop_cpg = False
 
     #check if input log file
@@ -157,6 +164,7 @@ def cpg_thread():
             if len(sys.argv) == 1:
                 #compute the CPG step
                 joint_setpoints = np.deg2rad(controller.step(delta_ms))
+
                 #update the robot informations to put in the render queue
                 robot_states["time"] = t
                 robot_states["joint"] = joint_setpoints
@@ -222,16 +230,25 @@ def cpg_thread():
             while plot_robot_pose and (t >= next_frame):
                 #compute when to grab the next frame
                 next_frame += (1000*speed/fps)
+                #store the cpg states for plotting
+                if plot_cpg_states and len(sys.argv) == 1:
+                    if cpg_r_history is None:
+                        cpg_r_history = np.expand_dims(controller.osc_r, axis=0)
+                        cpg_dr_history = np.expand_dims(controller.osc_dr, axis=0)
+                        cpg_ddr_history = np.expand_dims(controller.osc_ddr, axis=0)
+                        cpg_theta_history = np.expand_dims(controller.osc_theta, axis=0)
+                        cpg_dtheta_history = np.expand_dims(controller.osc_dtheta, axis=0)
+                    else:
+                        cpg_r_history = np.concatenate((cpg_r_history,np.expand_dims(controller.osc_r,axis=0)))
+                        cpg_dr_history = np.concatenate((cpg_dr_history,np.expand_dims(controller.osc_dr,axis=0)))
+                        cpg_ddr_history = np.concatenate((cpg_ddr_history,np.expand_dims(controller.osc_ddr,axis=0)))
+                        cpg_theta_history = np.concatenate((cpg_theta_history,np.expand_dims(controller.osc_theta,axis=0)))
+                        cpg_dtheta_history = np.concatenate((cpg_dtheta_history,np.expand_dims(controller.osc_dtheta,axis=0)))
                 render_queue.put([robot_states,robot_events])
                 robot_events = {"print": None}
         else:
             time.sleep(0.01)
 
-
-#Only start the shell if not reading from a file
-if len(sys.argv) == 1:
-    shell_thread_handle = threading.Thread(target=shell_thread)
-    shell_thread_handle.start()
 
 #Start CPG thread
 cpg_thread_handle = threading.Thread(target=cpg_thread)
@@ -245,15 +262,15 @@ if number_modules < 2:
     raise(Exception("Need at least 2 modules"))
 
 #Plotting variables
-module_absolute_angles = np.zeros(number_modules) #angle at which the module is in the global reference frame, +1 for the tail
-joint_positions = np.zeros((number_modules, 2))   #position in 2D space of each joint (each module is 1 unit long) in the global reference frame
+module_absolute_angles = np.zeros(number_modules+1) #angle at which the module is in the global reference frame, +1 for the tail
+joint_positions = np.zeros((number_modules+1, 2))   #position in 2D space of each joint (each module is 1 unit long) in the global reference frame, +1 for the tail end (even if not really a joint)
 
 #Initialize plot of physical robot
 if plot_robot_pose:
     fig, ax = plt.subplots()
     ax.set_title("Robot pose")
     axis_lenth = number_modules+2
-    ax.set_xlim(-1, axis_lenth-1)
+    ax.set_xlim(-1, axis_lenth)
     ax.set_ylim(-axis_lenth/2,axis_lenth/2)
     line = ax.plot(np.zeros(1), np.zeros(1))[0]
     points = ax.scatter(np.zeros(1), np.zeros(1))
@@ -282,7 +299,12 @@ if len(sys.argv) == 2 and plot_energy:
 plt.show(block=False)
 input("Rearange the windows and press enter")
 
-#Store all the power and energy data read from file
+#Only start the shell if not reading from a file
+if len(sys.argv) == 1:
+    shell_thread_handle = threading.Thread(target=shell_thread)
+    shell_thread_handle.start()
+
+#Store all data for the final plots (and real-time plots)
 time_history = []
 power_history = None
 energy_history = None
@@ -321,7 +343,7 @@ while(not stop) and plot_robot_pose:
         print(robot_events["print"])
 
     #compute absolute module angles and joint positions (for rendering)
-    for i in range(number_modules):
+    for i in range(number_modules+1):   #+1 for the tail
         if i == 0:
             module_absolute_angles[i] = 0
             joint_positions[i,0] = 1
@@ -337,40 +359,78 @@ while(not stop) and plot_robot_pose:
     points.set_offsets(np.column_stack((joint_positions[:,0],joint_positions[:,1])))
 
     #power and energy plotting
-    if plot_power:
-        ax_power.set_xlim(time_history[-1]-3000, time_history[-1])
-        ax_power.set_ylim(0,np.max(power_history[:,i])+1)
+    if len(sys.argv) == 2 and plot_power:
+        ax_power.set_xlim(time_history[-1]-10000, time_history[-1])
+        ax_power.set_ylim(0,np.max(power_history)+1)
         for i in range(number_modules):
             lines_power[i].set_xdata(time_history)
             lines_power[i].set_ydata(power_history[:,i])
-    if plot_energy:
-        ax_energy.set_xlim(time_history[-1]-3000, time_history[-1])
-        ax_energy.set_ylim(0,np.max(energy_history[:,i])+1)
+        fig_power.canvas.flush_events()
+    if len(sys.argv) == 2 and plot_energy:
+        ax_energy.set_xlim(time_history[-1]-10000, time_history[-1])
+        ax_energy.set_ylim(0,np.max(energy_history)+1)
         for i in range(number_modules):
             lines_energy[i].set_xdata(time_history)
             lines_energy[i].set_ydata(energy_history[:,i])
+        fig_energy.canvas.flush_events()
 
     #show plots on screen in real time
     fig.canvas.flush_events()
-    fig_power.canvas.flush_events()
-    fig_energy.canvas.flush_events()
     plt.show(block=False)
     time.sleep(max((1/fps) - (time.time()-start-0.001), 0.001))
     start = time.time()
 
 # == Final plotting of power and energy ==
+#CPG states plotting
+if len(sys.argv)==1 and plot_cpg_states:
+    fig_cpg, ax_cpg = plt.subplots(2,3)
+    #amplitude plot
+    ax_cpg[0,0].set_title("CPG r")
+    lines_cpg_r = []
+    for i in range(number_modules*2):
+        lines_cpg_r.append(ax_cpg[0,0].plot(time_history, cpg_r_history[:len(time_history),i], label="osc {0}".format(i))[0])
+    ax_cpg[0,0].legend()
+    #amplitude derivative plot
+    ax_cpg[0,1].set_title("CPG dr")
+    lines_cpg_dr = []
+    for i in range(number_modules*2):
+        lines_cpg_dr.append(ax_cpg[0,1].plot(time_history, cpg_dr_history[:len(time_history),i], label="osc {0}".format(i))[0])
+    ax_cpg[0,1].legend()
+    #amplitude double derivative plot
+    ax_cpg[0,2].set_title("CPG ddr")
+    lines_cpg_ddr = []
+    for i in range(number_modules*2):
+        lines_cpg_ddr.append(ax_cpg[0,2].plot(time_history, cpg_ddr_history[:len(time_history),i], label="osc {0}".format(i))[0])
+    ax_cpg[0,2].legend()
+    #amplitude phase plot
+    ax_cpg[1,0].set_title("CPG theta")
+    lines_cpg_theta = []
+    for i in range(number_modules*2):
+        lines_cpg_theta.append(ax_cpg[1,0].plot(time_history, cpg_theta_history[:len(time_history),i], label="osc {0}".format(i))[0])
+    ax_cpg[1,0].legend()
+    #amplitude phase derivative plot
+    ax_cpg[1,1].set_title("CPG dtheta")
+    lines_cpg_dtheta = []
+    for i in range(number_modules*2):
+        lines_cpg_dtheta.append(ax_cpg[1,1].plot(time_history, cpg_dtheta_history[:len(time_history),i], label="osc {0}".format(i))[0])
+    ax_cpg[1,1].legend()
+
 #power final plotting
-if plot_power:
+if len(sys.argv) == 2 and plot_power:
     ax_power.set_xlim(time_history[0], time_history[-1])
     ax_power.set_ylim(0,np.max(power_history[:,i])+1)
     for i in range(number_modules):
         lines_power[i].set_xdata(time_history)
         lines_power[i].set_ydata(power_history[:,i])
 #energy final plotting
-if plot_energy:
+if len(sys.argv) == 2 and plot_energy:
     ax_energy.set_xlim(time_history[0], time_history[-1])
     ax_energy.set_ylim(0,np.max(energy_history[:,i])+1)
     for i in range(number_modules):
         lines_energy[i].set_xdata(time_history)
         lines_energy[i].set_ydata(energy_history[:,i])
-plt.show()
+
+if (len(sys.argv) == 2 and (plot_energy or plot_power)):
+    plt.show()
+elif (len(sys.argv) == 1 and plot_cpg_states):
+    plt.show()

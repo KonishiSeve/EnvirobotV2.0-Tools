@@ -56,10 +56,9 @@ class CPG():
 
         #Discrete integration
         for i in range(self.number_oscillators):
-            self.osc_theta[i] += self.osc_dtheta[i]*(delta_ms/1000.0)
+            self.osc_theta[i] += (self.osc_dtheta[i]*(delta_ms/1000.0))
             self.osc_dr[i] += self.osc_ddr[i]*(delta_ms/1000.0)
             self.osc_r[i] += self.osc_dr[i]*(delta_ms/1000.0)
-
         #Compute joint position
         for i in range(self.number_modules):
             self.output[i] = (self.osc_r[i+self.number_modules]*(1.0+np.cos(self.osc_theta[i+self.number_modules])) - self.osc_r[i]*(1.0+np.cos(self.osc_theta[i])))*180/np.pi

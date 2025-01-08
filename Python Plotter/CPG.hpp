@@ -41,6 +41,10 @@ class CPG {
         uint8_t osc_w[MAX_OSCILLATORS][MAX_OSCILLATORS] = {{0}};   //binary coupling matrix (the coupling strength is taken into account in the step function)
         float osc_phi[MAX_OSCILLATORS][MAX_OSCILLATORS] = {{0}};   //phase shift between oscillators
 
+        //Variables for computation
+        uint8_t number_modules;
+        uint8_t number_oscillators;
+
     private:
         void update_matrices(void);
 
@@ -52,8 +56,4 @@ class CPG {
         float param_nwave;                //how many wave peaks are visible on the robot at the same time
         float param_coupling_strength;    //speed at which the phase difference between oscillators converge
         float param_a_r;                  //speed at which the amplitude of the oscillators converge
-
-        //Variables for computation
-        uint8_t number_modules;
-        uint8_t number_oscillators;
 };

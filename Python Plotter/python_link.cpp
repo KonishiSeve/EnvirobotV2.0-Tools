@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "CPG.hpp"
+#include <string.h>
 
 CPG cpg;
 
@@ -31,11 +32,13 @@ extern "C" void python_cpg_step(int8_t *output, float delta_ms) {
 
 //Return the all the states of the CPG controller
 extern "C" void python_cpg_states(float* osc_r, float* osc_dr, float* osc_ddr, float* osc_theta, float* osc_dtheta) {
-    osc_r = cpg.osc_r;
-    osc_dr = cpg.osc_dr;
-    osc_ddr = cpg.osc_ddr;
-    osc_theta = cpg.osc_theta;
-    osc_dtheta = cpg.osc_dtheta;
+    for(uint8_t i=0;i<cpg.number_oscillators;i++) {
+        osc_r[i] = cpg.osc_r[i];
+        osc_dr[i] = cpg.osc_dr[i];
+        osc_ddr[i] = cpg.osc_ddr[i];
+        osc_theta[i] = cpg.osc_theta[i];
+        osc_dtheta[i] = cpg.osc_dtheta[i];
+    }
 }
 
 extern "C" void python_cpg_reset() {

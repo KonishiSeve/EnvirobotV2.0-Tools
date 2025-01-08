@@ -89,12 +89,17 @@ class CPP_CPG():
         array_ddr = []
         array_theta = []
         array_dtheta = []
-        self.dll.python_cpg_states(array_type(*array_r), array_type(*array_dr), array_type(*array_ddr), array_type(*array_theta), array_type(*array_dtheta))
-        self.osc_r = np.array(array_r)
-        self.osc_dr = np.array(array_dr)
-        self.osc_ddr = np.array(array_ddr)
-        self.osc_theta = np.array(array_theta)
-        self.osc_dtheta = np.array(array_dtheta)
+        output_r = array_type(*array_r)
+        output_dr = array_type(*array_dr)
+        output_ddr = array_type(*array_ddr)
+        output_theta = array_type(*array_theta)
+        output_dtheta = array_type(*array_dtheta)
+        self.dll.python_cpg_states(output_r, output_dr, output_ddr, output_theta, output_dtheta)
+        self.osc_r = np.array(output_r)
+        self.osc_dr = np.array(output_dr)
+        self.osc_ddr = np.array(output_ddr)
+        self.osc_theta = np.array(output_theta)
+        self.osc_dtheta = np.array(output_dtheta)
         return self.output
     
     def reset(self):
