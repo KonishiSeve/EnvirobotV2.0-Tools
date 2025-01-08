@@ -43,8 +43,8 @@ delta_ms = 10             # integration stepsize in milliseconds (lower is more 
 # === Plotting parameters === #
 plot_robot_pose = False  # Plot the robot pose in real time
 plot_cpg_states = True      # Plot the oscillator states (if not reading from input file)
-plot_power = True       # Plot the power consumption (if in input file)
-plot_energy = True      # Plot the energy consumption (if in input file)
+plot_power = False       # Plot the power consumption (if in input file)
+plot_energy = False      # Plot the energy consumption (if in input file)
 fps = 30                # animation frames per seconds (higher is more expensive)
 speed = 1               # animation speed multiplier (higher is more expensive)
 duration = 10          # animation duration in seconds
@@ -111,6 +111,7 @@ def shell_thread():
 
 #CPG computation thread
 #Compute the CPG joint positions or reads them from the input file
+cpg_time_history = []
 cpg_r_history = None
 cpg_dr_history = None
 cpg_ddr_history = None
@@ -159,7 +160,7 @@ def cpg_thread():
     # This queue is then read by the main thread to plot it with matplotlib
     while (not stop) and (not stop_cpg):
         #limit how much we compute in advance to still allow for live CPG parameter changes but keep a smooth framerate
-        if render_queue.qsize() < int(fps/10):
+        if (render_queue.qsize() < int(fps/10)) or (not plot_cpg_states):
             # == Compute a step of the CPG controller and update the joint setpoints == #
             if len(sys.argv) == 1:
                 #compute the CPG step
@@ -218,7 +219,7 @@ def cpg_thread():
                 #if end of file
                 if raw_data == None:
                     #render the last frame
-                    render_queue.put([robot_states,robot_events])
+                    render_queue.put([robot_states.copy(),robot_events.copy()])
                     #end of file, tell the renderer to stop
                     render_queue.put(None)
                     stop_cpg = True
@@ -227,23 +228,24 @@ def cpg_thread():
                 t = int(raw_data["time"])
 
             # == Add the data to the rendering queue == #
-            while plot_robot_pose and (t >= next_frame):
+            while (t >= next_frame):
                 #compute when to grab the next frame
                 next_frame += (1000*speed/fps)
                 #store the cpg states for plotting
                 if plot_cpg_states and len(sys.argv) == 1:
+                    cpg_time_history.append(t)
                     if cpg_r_history is None:
-                        cpg_r_history = np.expand_dims(controller.osc_r, axis=0)
-                        cpg_dr_history = np.expand_dims(controller.osc_dr, axis=0)
-                        cpg_ddr_history = np.expand_dims(controller.osc_ddr, axis=0)
-                        cpg_theta_history = np.expand_dims(controller.osc_theta, axis=0)
-                        cpg_dtheta_history = np.expand_dims(controller.osc_dtheta, axis=0)
+                        cpg_r_history = np.expand_dims((controller.osc_r).copy(), axis=0)
+                        cpg_dr_history = np.expand_dims((controller.osc_dr).copy(), axis=0)
+                        cpg_ddr_history = np.expand_dims((controller.osc_ddr).copy(), axis=0)
+                        cpg_theta_history = np.expand_dims((controller.osc_theta).copy(), axis=0)
+                        cpg_dtheta_history = np.expand_dims((controller.osc_dtheta).copy(), axis=0)
                     else:
-                        cpg_r_history = np.concatenate((cpg_r_history,np.expand_dims(controller.osc_r,axis=0)))
-                        cpg_dr_history = np.concatenate((cpg_dr_history,np.expand_dims(controller.osc_dr,axis=0)))
-                        cpg_ddr_history = np.concatenate((cpg_ddr_history,np.expand_dims(controller.osc_ddr,axis=0)))
-                        cpg_theta_history = np.concatenate((cpg_theta_history,np.expand_dims(controller.osc_theta,axis=0)))
-                        cpg_dtheta_history = np.concatenate((cpg_dtheta_history,np.expand_dims(controller.osc_dtheta,axis=0)))
+                        cpg_r_history = np.concatenate((cpg_r_history,np.expand_dims((controller.osc_r).copy(),axis=0)))
+                        cpg_dr_history = np.concatenate((cpg_dr_history,np.expand_dims((controller.osc_dr).copy(),axis=0)))
+                        cpg_ddr_history = np.concatenate((cpg_ddr_history,np.expand_dims((controller.osc_ddr).copy(),axis=0)))
+                        cpg_theta_history = np.concatenate((cpg_theta_history,np.expand_dims((controller.osc_theta).copy(),axis=0)))
+                        cpg_dtheta_history = np.concatenate((cpg_dtheta_history,np.expand_dims((controller.osc_dtheta).copy(),axis=0)))
                 render_queue.put([robot_states,robot_events])
                 robot_events = {"print": None}
         else:
@@ -264,6 +266,8 @@ if number_modules < 2:
 #Plotting variables
 module_absolute_angles = np.zeros(number_modules+1) #angle at which the module is in the global reference frame, +1 for the tail
 joint_positions = np.zeros((number_modules+1, 2))   #position in 2D space of each joint (each module is 1 unit long) in the global reference frame, +1 for the tail end (even if not really a joint)
+#if there is real-time plotting to do
+plot_live = plot_robot_pose or ((len(sys.argv)==2) and (plot_power or plot_energy))
 
 #Initialize plot of physical robot
 if plot_robot_pose:
@@ -297,7 +301,7 @@ if len(sys.argv) == 2 and plot_energy:
 
 #Give time to the user to rearange the matplotlib windows
 plt.show(block=False)
-input("Rearange the windows and press enter")
+input("[CPG]$ Press enter to start")
 
 #Only start the shell if not reading from a file
 if len(sys.argv) == 1:
@@ -310,15 +314,15 @@ power_history = None
 energy_history = None
 
 start = time.time()
-while(not stop) and plot_robot_pose:
+while(not stop):
     #wait for queue to fill (should normally never be empty)
     while(render_queue.empty() and (not stop)):
-        print("[Warning] desired framerate not achieved, lower the framerate, speed or delta_t")
-        time.sleep(1)
+        if plot_robot_pose or ((len(sys.argv)==2) and (plot_power or plot_energy)):
+            print("[Warning] desired framerate not achieved, lower the framerate, speed or delta_t")
+            time.sleep(1)
     
     #retrieve what the cpg thread computed (or what was read from file)
     raw_queue = render_queue.get()
-
     #end of animation
     if raw_queue is None:
         stop = True
@@ -354,9 +358,11 @@ while(not stop) and plot_robot_pose:
             joint_positions[i,1] = joint_positions[i-1,1] + np.sin(module_absolute_angles[i])
     
     #Physical robot plotting
-    line.set_xdata(np.concatenate((np.zeros(2), joint_positions[:,0]), axis=None))
-    line.set_ydata(np.concatenate((np.zeros(2), joint_positions[:,1]), axis=None))
-    points.set_offsets(np.column_stack((joint_positions[:,0],joint_positions[:,1])))
+    if plot_robot_pose:
+        line.set_xdata(np.concatenate((np.zeros(2), joint_positions[:,0]), axis=None))
+        line.set_ydata(np.concatenate((np.zeros(2), joint_positions[:,1]), axis=None))
+        points.set_offsets(np.column_stack((joint_positions[:,0],joint_positions[:,1])))
+        fig.canvas.flush_events()
 
     #power and energy plotting
     if len(sys.argv) == 2 and plot_power:
@@ -375,10 +381,10 @@ while(not stop) and plot_robot_pose:
         fig_energy.canvas.flush_events()
 
     #show plots on screen in real time
-    fig.canvas.flush_events()
-    plt.show(block=False)
-    time.sleep(max((1/fps) - (time.time()-start-0.001), 0.001))
-    start = time.time()
+    if plot_robot_pose or ((len(sys.argv)==2) and (plot_power or plot_energy)):
+        plt.show(block=False)
+        time.sleep(max((1/fps) - (time.time()-start-0.001), 0.001))
+        start = time.time()
 
 # == Final plotting of power and energy ==
 #CPG states plotting
@@ -388,31 +394,31 @@ if len(sys.argv)==1 and plot_cpg_states:
     ax_cpg[0,0].set_title("CPG r")
     lines_cpg_r = []
     for i in range(number_modules*2):
-        lines_cpg_r.append(ax_cpg[0,0].plot(time_history, cpg_r_history[:len(time_history),i], label="osc {0}".format(i))[0])
+        lines_cpg_r.append(ax_cpg[0,0].plot(cpg_time_history, cpg_r_history[:len(time_history),i], label="osc {0}".format(i))[0])
     ax_cpg[0,0].legend()
     #amplitude derivative plot
     ax_cpg[0,1].set_title("CPG dr")
     lines_cpg_dr = []
     for i in range(number_modules*2):
-        lines_cpg_dr.append(ax_cpg[0,1].plot(time_history, cpg_dr_history[:len(time_history),i], label="osc {0}".format(i))[0])
+        lines_cpg_dr.append(ax_cpg[0,1].plot(cpg_time_history, cpg_dr_history[:len(time_history),i], label="osc {0}".format(i))[0])
     ax_cpg[0,1].legend()
     #amplitude double derivative plot
     ax_cpg[0,2].set_title("CPG ddr")
     lines_cpg_ddr = []
     for i in range(number_modules*2):
-        lines_cpg_ddr.append(ax_cpg[0,2].plot(time_history, cpg_ddr_history[:len(time_history),i], label="osc {0}".format(i))[0])
+        lines_cpg_ddr.append(ax_cpg[0,2].plot(cpg_time_history, cpg_ddr_history[:len(time_history),i], label="osc {0}".format(i))[0])
     ax_cpg[0,2].legend()
     #amplitude phase plot
     ax_cpg[1,0].set_title("CPG theta")
     lines_cpg_theta = []
     for i in range(number_modules*2):
-        lines_cpg_theta.append(ax_cpg[1,0].plot(time_history, cpg_theta_history[:len(time_history),i], label="osc {0}".format(i))[0])
+        lines_cpg_theta.append(ax_cpg[1,0].plot(cpg_time_history, cpg_theta_history[:len(time_history),i], label="osc {0}".format(i))[0])
     ax_cpg[1,0].legend()
     #amplitude phase derivative plot
     ax_cpg[1,1].set_title("CPG dtheta")
     lines_cpg_dtheta = []
     for i in range(number_modules*2):
-        lines_cpg_dtheta.append(ax_cpg[1,1].plot(time_history, cpg_dtheta_history[:len(time_history),i], label="osc {0}".format(i))[0])
+        lines_cpg_dtheta.append(ax_cpg[1,1].plot(cpg_time_history, cpg_dtheta_history[:len(time_history),i], label="osc {0}".format(i))[0])
     ax_cpg[1,1].legend()
 
 #power final plotting
