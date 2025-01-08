@@ -36,18 +36,20 @@ coupling_strength = 50  # speed at which the phase difference between coupled os
 a_r = 10                # speed at which the amplitudes of the oscillators converge
 
 # === Computing parameters === #
-use_cpp_version = False   # use the C++ implementation that is compiled into a .dll (did not work on personnal laptop, only lab desktop)
-file_save = False        # saves the joint setpoints and timebase to a csv file
-delta_ms = 10             # integration stepsize in milliseconds (lower is more expensive)
+use_cpp_version = False     # use the C++ implementation that is compiled into a .dll (compilation did not work on personnal laptop, only lab desktop)
+file_save = True           # saves the joint setpoints and timebase to a csv file
+delta_ms = 10               # integration stepsize in milliseconds (lower is more expensive)
 
 # === Plotting parameters === #
-plot_robot_pose = False  # Plot the robot pose in real time
+plot_robot_pose = True      # Plot the robot pose in real time
 plot_cpg_states = True      # Plot the oscillator states (if not reading from input file)
-plot_power = True       # Plot the power consumption (if in input file)
-plot_energy = False      # Plot the energy consumption (if in input file)
-fps = 30                # animation frames per seconds (higher is more expensive)
-speed = 1               # animation speed multiplier (higher is more expensive)
-duration = 10          # animation duration in seconds
+plot_power = True           # Plot the power consumption (if in input file), Only plotted in real time if the robot pose plotting is also enabled
+plot_power_window = 5000    # The last X ms are plotted during live plotting
+plot_energy = True          # Plot the energy consumption (if in input file), Only plotted in real time if the robot pose plotting is also enabled
+plot_energy_window = 5000   # The last X ms are plotted during live plotting
+fps = 30                    # animation frames per seconds (higher is more expensive)
+speed = 1                   # animation speed multiplier (higher is more expensive)
+duration = 20               # animation duration in seconds
 
 #============================#
 #===== GLOBAL VARIABLES =====#
@@ -58,19 +60,32 @@ if use_cpp_version:
 else:
     controller = CPG(number_modules, frequency, direction, amplc, amplh, nwave, coupling_strength, a_r)
 
-#User shell commands
+#data saving for cpg plotting
+cpg_time_history = []
+cpg_r_history = None
+cpg_dr_history = None
+cpg_ddr_history = None
+cpg_theta_history = None
+cpg_dtheta_history = None
+
+#Store all data for the consumption plots (and real-time plots)
+time_history = []
+power_history = None
+energy_history = None
+
+#User shell commands (Shell thread --> CPG thread)
 shell_queue = queue.Queue()
-#data coming from cpg controller/robot
+#data coming from cpg controller/robot (CPG thread --> Rendering thread)
 render_queue = queue.Queue()
 
-#stop flag
+#to stop all threads
 stop = False
 
 #===================== #
 #====== THREADS ====== #
 #===================== #
 #Shell thread for the user to interact with the controller and plotter
-#Not used when reading a file
+#Not used when reading a file, Only used when plotting robot pose
 def shell_thread():
     global stop, controller
     while not stop:
@@ -111,23 +126,17 @@ def shell_thread():
 
 #CPG computation thread
 #Compute the CPG joint positions or reads them from the input file
-cpg_time_history = []
-cpg_r_history = None
-cpg_dr_history = None
-cpg_ddr_history = None
-cpg_theta_history = None
-cpg_dtheta_history = None
 def cpg_thread():
     global stop, controller, delta_ms, number_modules, plot_power, plot_energy
     global cpg_r_history, cpg_dr_history, cpg_ddr_history, cpg_theta_history, cpg_dtheta_history
-    stop_cpg = False
+    stop_cpg = False    #specific to this thread
 
     #check if input log file
     if len(sys.argv) == 2:
         #initialize the input log file
         input_file = LogFile()
         input_file.open(sys.argv[1])
-        # count the number of modules in the file
+        #count the number of modules in the file
         number_modules = 0
         loop = True
         while loop:
@@ -161,14 +170,15 @@ def cpg_thread():
     while (not stop) and (not stop_cpg):
         #limit how much we compute in advance to still allow for live CPG parameter changes but keep a smooth framerate
         if (render_queue.qsize() < int(fps/10)) or (not plot_robot_pose):
-            # == Compute a step of the CPG controller and update the joint setpoints == #
+            # == Compute a step of the CPG controller and update the joint setpoints (if no input file) == #
             if len(sys.argv) == 1:
                 #compute the CPG step
                 joint_setpoints = np.deg2rad(controller.step(delta_ms))
 
                 #update the robot informations to put in the render queue
                 robot_states["time"] = t
-                robot_states["joint"] = joint_setpoints
+                robot_states["joint"] = joint_setpoints.copy()
+
                 #save to file if enabled
                 if len(sys.argv) == 1 and file_save:
                     output_data = {}
@@ -179,8 +189,8 @@ def cpg_thread():
                     if shell_queue.qsize() > 0:
                         output_data["print"] = shell_queue.get()
                     output_file.write(output_data)
-                t += delta_ms
 
+                t += delta_ms
                 #stop the rendering if above the max simulation duration
                 if t >= duration*1000:
                     render_queue.put(None) #notify the main thread that the simulation is over
@@ -189,17 +199,20 @@ def cpg_thread():
 
             # == Read a new line from the file == #
             else:
+                #parse the file content
                 robot_states["time"] = int(raw_data["time"])
                 robot_states["joint"] = []
                 robot_states["energy"] = []
                 robot_states["power"] = []
                 for i in range(number_modules):
-                    robot_states["joint"].append(float(raw_data["joint{0}".format(i)]))
+                    if "joint{0}".format(i) in raw_data:
+                        robot_states["joint"].append(float(raw_data["joint{0}".format(i)]))
                     if "energy{0}".format(i) in raw_data:
                         robot_states["energy"].append(float(raw_data["energy{0}".format(i)]))
                     if "power{0}".format(i) in raw_data:
                         robot_states["power"].append(float(raw_data["power{0}".format(i)]))
                 robot_states["joint"] = np.deg2rad(np.array(robot_states["joint"]))
+
                 #Disable power plotting if not in file
                 if len(robot_states["power"]) > 0:
                     robot_states["power"] = np.array(robot_states["power"])
@@ -210,12 +223,14 @@ def cpg_thread():
                     robot_states["energy"] = np.array(robot_states["energy"])
                 else:
                     plot_energy = False
+
                 #add print event if there is one
                 if "print" in raw_data:
                     robot_events["print"] = raw_data["print"]
 
                 #grab next file entry to know until when the current states should be shown
                 raw_data = input_file.read()
+
                 #if end of file
                 if raw_data == None:
                     #render the last frame
@@ -249,7 +264,7 @@ def cpg_thread():
                 render_queue.put([robot_states.copy(),robot_events.copy()])
                 robot_events = {"print": None}
         else:
-            time.sleep(0.01)
+            time.sleep(0.001)
 
 
 #Start CPG thread
@@ -277,7 +292,7 @@ if plot_robot_pose:
     line = ax.plot(np.zeros(1), np.zeros(1))[0]
     points = ax.scatter(np.zeros(1), np.zeros(1))
 
-#Initialize plot of power and energy consumption (if reading from file)
+#Initialize plot of power consumption (if reading from file)
 if len(sys.argv) == 2 and plot_power:
     fig_power, ax_power = plt.subplots()
     ax_power.set_title("Power consumption")
@@ -287,6 +302,8 @@ if len(sys.argv) == 2 and plot_power:
     for i in range(number_modules):
         lines_power.append(ax_power.plot(np.zeros(1), np.zeros(1), label="joint {0}".format(i))[0])
     ax_power.legend(loc="upper left")
+
+#Initialize plot of energy consumption (if reading from file)
 if len(sys.argv) == 2 and plot_energy:
     fig_energy, ax_energy = plt.subplots()
     ax_energy.set_title("Energy consumption")
@@ -297,35 +314,31 @@ if len(sys.argv) == 2 and plot_energy:
         lines_energy.append(ax_energy.plot(np.zeros(1), np.zeros(1), label="joint {0}".format(i))[0])
     ax_energy.legend(loc="upper left")
 
+#If there is live plotting
 if plot_robot_pose:
     #Give time to the user to rearange the matplotlib windows
     plt.show(block=False)
     input("[CPG]$ Press enter to start")
-
     #Only start the shell if not reading from a file and there is live plotting
     if len(sys.argv) == 1:
         shell_thread_handle = threading.Thread(target=shell_thread)
         shell_thread_handle.start()
 
-#Store all data for the final plots (and real-time plots)
-time_history = []
-power_history = None
-energy_history = None
-
+#Plotting loop
 start = time.time()
 while(not stop):
     #wait for queue to fill (should normally never be empty)
     while(render_queue.empty() and (not stop)):
         if plot_robot_pose:
-            print("[Warning] desired framerate not achieved, lower the framerate, speed or delta_t")
+            print("[Warning] CPG computation cannot keep up, lower the framerate, speed or delta_t")
             time.sleep(1)
     
     #retrieve what the cpg thread computed (or what was read from file)
     raw_queue = render_queue.get()
-    #end of animation
+    #end of animation (end of file or max duration reached)
     if raw_queue is None:
         stop = True
-        if plot_robot_pose:
+        if plot_robot_pose and len(sys.argv) == 1:
             print("Done\n[CPG]$ - press enter to exit -", end="")
         break
 
@@ -334,14 +347,17 @@ while(not stop):
     robot_events = raw_queue[1]
     #joint data
     joint_setpoints = robot_states["joint"]
-    #power and energy data
+    #power consumption data
     time_history.append(robot_states["time"])
-    if power_history is None or energy_history is None:
-        energy_history = np.array([robot_states["energy"]])
+    if power_history is None:
         power_history = np.array([robot_states["power"]])
     else:
-        energy_history = np.concatenate((energy_history, np.array([robot_states["energy"]])))
         power_history = np.concatenate((power_history, np.array([robot_states["power"]])))
+    #energy consumption data
+    if energy_history is None:
+        energy_history = np.array([robot_states["energy"]])
+    else:
+        energy_history = np.concatenate((energy_history, np.array([robot_states["energy"]])))
     #CPG parameter update
     if not robot_events["print"] == None:
         print(robot_events["print"])
@@ -357,31 +373,29 @@ while(not stop):
             joint_positions[i,0] = joint_positions[i-1,0] + np.cos(module_absolute_angles[i])
             joint_positions[i,1] = joint_positions[i-1,1] + np.sin(module_absolute_angles[i])
     
-    #Physical robot plotting
+    #Physical robot live plotting
     if plot_robot_pose:
         line.set_xdata(np.concatenate((np.zeros(2), joint_positions[:,0]), axis=None))
         line.set_ydata(np.concatenate((np.zeros(2), joint_positions[:,1]), axis=None))
         points.set_offsets(np.column_stack((joint_positions[:,0],joint_positions[:,1])))
         fig.canvas.flush_events()
-
-        #power and energy plotting
+        #power consumption live plotting
         if len(sys.argv) == 2 and plot_power:
-            ax_power.set_xlim(time_history[-1]-10000, time_history[-1])
+            ax_power.set_xlim(time_history[-1]-plot_power_window, time_history[-1])
             ax_power.set_ylim(0,np.max(power_history)+1)
             for i in range(number_modules):
                 lines_power[i].set_xdata(time_history)
                 lines_power[i].set_ydata(power_history[:,i])
             fig_power.canvas.flush_events()
+        #power consumption live plotting
         if len(sys.argv) == 2 and plot_energy:
-            ax_energy.set_xlim(time_history[-1]-10000, time_history[-1])
+            ax_energy.set_xlim(time_history[-1]-plot_energy_window, time_history[-1])
             ax_energy.set_ylim(0,np.max(energy_history)+1)
             for i in range(number_modules):
                 lines_energy[i].set_xdata(time_history)
                 lines_energy[i].set_ydata(energy_history[:,i])
             fig_energy.canvas.flush_events()
-
-    #show plots on screen in real time
-    if plot_robot_pose:
+        #show plots on screen in real time
         plt.show(block=False)
         time.sleep(max((1/fps) - (time.time()-start-0.001), 0.001))
         start = time.time()
