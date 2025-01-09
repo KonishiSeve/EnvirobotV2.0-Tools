@@ -1,6 +1,6 @@
 """
  * CPGPlotter.py
- * This file is a visualizer of Envirobot running a CPG controller
+ * This file is a visualizer of Envirobot V2.0 running a CPG controller
  *
  *  Created on: Oct 29, 2024
  *      Author: Séverin Konishi
@@ -29,16 +29,16 @@ number_modules = 4      # number of modules/joints (at least 1), does not includ
 # === default CPG parameters === #
 frequency = 1           # oscillator frequency
 direction = 0           # turning direction (positive/negative) and amplitude
-amplc = 0.1             # defines the amplitude of the first joint (closest to head)
-amplh = 0.3             # defines the amplitude of the last joint (furthest from head)
+amplc = 0.2             # defines the amplitude of the first joint (closest to head)
+amplh = 0.2             # defines the amplitude of the last joint (furthest from head)
 nwave = 1               # number of waves peaks that can be seen on the robot at the same time
 coupling_strength = 50  # speed at which the phase difference between coupled oscillators converges
 a_r = 10                # speed at which the amplitudes of the oscillators converge
 
 # === Computing parameters === #
 use_cpp_version = False     # use the C++ implementation that is compiled into a .dll (compilation did not work on personnal laptop, only lab desktop)
-file_save = True           # saves the joint setpoints and timebase to a csv file
-delta_ms = 10               # integration stepsize in milliseconds (lower is more expensive)
+file_save = False           # saves the joint setpoints and timebase to a csv file
+delta_ms = 1               # integration stepsize in milliseconds (lower is more expensive)
 
 # === Plotting parameters === #
 plot_robot_pose = True      # Plot the robot pose in real time
@@ -49,7 +49,7 @@ plot_energy = True          # Plot the energy consumption (if in input file), On
 plot_energy_window = 5000   # The last X ms are plotted during live plotting
 fps = 30                    # animation frames per seconds (higher is more expensive)
 speed = 1                   # animation speed multiplier (higher is more expensive)
-duration = 20               # animation duration in seconds
+duration = 30               # animation duration in seconds
 
 #============================#
 #===== GLOBAL VARIABLES =====#
@@ -78,8 +78,8 @@ shell_queue = queue.Queue()
 #data coming from cpg controller/robot (CPG thread --> Rendering thread)
 render_queue = queue.Queue()
 
-#to stop all threads
-stop = False
+#The user stopped the process from the shell
+user_stop = False
 
 #===================== #
 #====== THREADS ====== #
@@ -87,11 +87,13 @@ stop = False
 #Shell thread for the user to interact with the controller and plotter
 #Not used when reading a file, Only used when plotting robot pose
 def shell_thread():
-    global stop, controller
-    while not stop:
+    global user_stop, controller
+    stop_shell = False
+    while not stop_shell:
         command = input("[CPG]$ ")
         if command == "exit" or command == "stop":
-            stop = True
+            user_stop = True
+            stop_shell = True
             break
         elif len(command) == 0:
             continue
@@ -127,7 +129,7 @@ def shell_thread():
 #CPG computation thread
 #Compute the CPG joint positions or reads them from the input file
 def cpg_thread():
-    global stop, controller, delta_ms, number_modules, plot_power, plot_energy
+    global user_stop, controller, delta_ms, number_modules, plot_power, plot_energy
     global cpg_r_history, cpg_dr_history, cpg_ddr_history, cpg_theta_history, cpg_dtheta_history
     stop_cpg = False    #specific to this thread
 
@@ -167,7 +169,7 @@ def cpg_thread():
     #run the loop
     # This computes CPG setpoints or reads them from file and puts them into a queue
     # This queue is then read by the main thread to plot it with matplotlib
-    while (not stop) and (not stop_cpg):
+    while not stop_cpg:
         #limit how much we compute in advance to still allow for live CPG parameter changes but keep a smooth framerate
         if (render_queue.qsize() < int(fps/10)) or (not plot_robot_pose):
             # == Compute a step of the CPG controller and update the joint setpoints (if no input file) == #
@@ -192,7 +194,7 @@ def cpg_thread():
 
                 t += delta_ms
                 #stop the rendering if above the max simulation duration
-                if t >= duration*1000:
+                if t >= duration*1000 or user_stop:
                     render_queue.put(None) #notify the main thread that the simulation is over
                     stop_cpg = True
                     break
@@ -232,7 +234,7 @@ def cpg_thread():
                 raw_data = input_file.read()
 
                 #if end of file
-                if raw_data == None:
+                if raw_data == None or user_stop:
                     #render the last frame
                     render_queue.put([robot_states.copy(),robot_events.copy()])
                     #end of file, tell the renderer to stop
@@ -248,7 +250,6 @@ def cpg_thread():
                 next_frame += (1000*speed/fps)
                 #store the cpg states for plotting
                 if plot_cpg_states and len(sys.argv) == 1:
-                    cpg_time_history.append(t)
                     if cpg_r_history is None:
                         cpg_r_history = np.expand_dims((controller.osc_r).copy(), axis=0)
                         cpg_dr_history = np.expand_dims((controller.osc_dr).copy(), axis=0)
@@ -261,6 +262,7 @@ def cpg_thread():
                         cpg_ddr_history = np.concatenate((cpg_ddr_history,np.expand_dims((controller.osc_ddr).copy(),axis=0)))
                         cpg_theta_history = np.concatenate((cpg_theta_history,np.expand_dims((controller.osc_theta).copy(),axis=0)))
                         cpg_dtheta_history = np.concatenate((cpg_dtheta_history,np.expand_dims((controller.osc_dtheta).copy(),axis=0)))
+                    cpg_time_history.append(t)
                 render_queue.put([robot_states.copy(),robot_events.copy()])
                 robot_events = {"print": None}
         else:
@@ -326,9 +328,10 @@ if plot_robot_pose:
 
 #Plotting loop
 start = time.time()
-while(not stop):
+stop_plot = False
+while not stop_plot:
     #wait for queue to fill (should normally never be empty)
-    while(render_queue.empty() and (not stop)):
+    while(render_queue.empty() and (not stop_plot)):
         if plot_robot_pose:
             print("[Warning] CPG computation cannot keep up, lower the framerate, speed or delta_t")
             time.sleep(1)
@@ -337,8 +340,8 @@ while(not stop):
     raw_queue = render_queue.get()
     #end of animation (end of file or max duration reached)
     if raw_queue is None:
-        stop = True
-        if plot_robot_pose and len(sys.argv) == 1:
+        stop_plot = True
+        if plot_robot_pose and len(sys.argv) == 1 and (not user_stop):
             print("Done\n[CPG]$ - press enter to exit -", end="")
         break
 
@@ -360,7 +363,7 @@ while(not stop):
         energy_history = np.concatenate((energy_history, np.array([robot_states["energy"]])))
     #CPG parameter update
     if not robot_events["print"] == None:
-        print(robot_events["print"])
+        print("[{0}]".format(robot_states["time"]) + robot_events["print"])
 
     #compute absolute module angles and joint positions (for rendering)
     for i in range(number_modules+1):   #+1 for the tail
@@ -422,6 +425,7 @@ if len(sys.argv)==1 and plot_cpg_states:
     ax_cpg[0,2].legend()
     ax_cpg[1,0].legend()
     ax_cpg[1,1].legend()
+    ax_cpg[1,2].axis("off")
 
 #power final plotting
 if len(sys.argv) == 2 and plot_power:
@@ -434,7 +438,7 @@ if len(sys.argv) == 2 and plot_power:
 #energy final plotting
 if len(sys.argv) == 2 and plot_energy:
     ax_energy.set_xlim(time_history[0], time_history[-1])
-    ax_energy.set_ylim(0,np.max(energy_history)+1)
+    ax_energy.set_ylim(np.min(energy_history),np.max(energy_history)+1)
     for i in range(number_modules):
         lines_energy[i].set_xdata(time_history)
         lines_energy[i].set_ydata(energy_history[:,i])
