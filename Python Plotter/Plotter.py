@@ -80,6 +80,7 @@ render_queue = queue.Queue()
 
 #The user stopped the process from the shell
 user_stop = False
+stop_shell = False
 
 #===================== #
 #====== THREADS ====== #
@@ -87,9 +88,8 @@ user_stop = False
 #Shell thread for the user to interact with the controller and plotter
 #Not used when reading a file, Only used when plotting robot pose
 def shell_thread():
-    global user_stop, controller
-    stop_shell = False
-    while not stop_shell:
+    global user_stop, stop_shell, controller
+    while (not stop_shell) and not (user_stop):
         command = input("[CPG]$ ")
         if command == "exit" or command == "stop":
             user_stop = True
@@ -129,7 +129,7 @@ def shell_thread():
 #CPG computation thread
 #Compute the CPG joint positions or reads them from the input file
 def cpg_thread():
-    global user_stop, controller, delta_ms, number_modules, plot_power, plot_energy
+    global user_stop, stop_shell, controller, delta_ms, number_modules, plot_power, plot_energy
     global cpg_r_history, cpg_dr_history, cpg_ddr_history, cpg_theta_history, cpg_dtheta_history
     stop_cpg = False    #specific to this thread
 
@@ -197,6 +197,7 @@ def cpg_thread():
                 if t >= duration*1000 or user_stop:
                     render_queue.put(None) #notify the main thread that the simulation is over
                     stop_cpg = True
+                    stop_shell = True
                     break
 
             # == Read a new line from the file == #
