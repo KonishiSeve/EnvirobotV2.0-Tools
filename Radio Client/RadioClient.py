@@ -35,7 +35,6 @@ help_print = [{"command": "getb ADDRESS", "description": "Reads an 8 bits regist
               {"command": "exit", "description": "Close the shell"},
               ]
 
-
 #Class interfacing with the USB radio dongle
 class PCRadio:
     def __init__(self, port):
@@ -319,10 +318,46 @@ if __name__ == "__main__":
                     pass
                 print("Monitoring stopped")
 
+            #Starting and stopping the robot
+            elif(command[0] == "robot"):
+                if(command[1] == "start"):
+                    radio.reg_write_8(0x00, 1)
+                elif(command[1] == "stop"):
+                    radio.reg_write_8(0x00, 0)
+            
+            #Change the CPG parameters
+            elif(command[0] == "cpg"):
+                if(command[1] == "start"):
+                    radio.reg_write_8(0x101, 2)
+                elif(command[1] == "stop"):
+                    radio.reg_write_8(0x101, 0)
+                elif(command[1] == "freq"):
+                    radio.reg_write_float(0x110,float(command[2]))
+                elif(command[1] == "dir"):
+                    radio.reg_write_float(0x111,float(command[2]))
+                elif(command[1] == "amplc"):
+                    radio.reg_write_float(0x112,float(command[2]))
+                elif(command[1] == "amplh"):
+                    radio.reg_write_float(0x113,float(command[2]))
+                elif(command[1] == "nwave"):
+                    radio.reg_write_float(0x114,float(command[2]))
+                elif(command[1] == "coupling"):
+                    radio.reg_write_float(0x115,float(command[2]))
+                elif(command[1] == "ar"):
+                    radio.reg_write_float(0x116,float(command[2]))
+                elif(command[1] == "dirmax"):
+                    radio.reg_write_float(0x120,float(command[2]))
+                elif(command[1] == "amplcmax"):
+                    radio.reg_write_float(0x121,float(command[2]))
+                elif(command[1] == "amplhmax"):
+                    radio.reg_write_float(0x122,float(command[2]))
+
+            #Trigger the reset pin of the STM32
             elif(command[0] == "stmreset"):
                 radio.reg_write_8(0x3E2, 0xAA)
                 continue
-
+            
+            #Read the water leak register and checks that the response is correct
             elif(command[0] == "watercheck"):
                 if(len(command) != 2):
                     print('usage (type "help" for more details): watercheck FREQUENCY')
@@ -350,7 +385,7 @@ if __name__ == "__main__":
                 continue
                 
             elif(command[0] == "help"):
-                #get the longest command to pad the others
+                #get the longest command length to pad the others
                 max_len = 0
                 for i in help_print:
                     max_len = max(max_len, len(i["command"]))

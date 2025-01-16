@@ -3,7 +3,7 @@
  * This file is a visualizer of Envirobot V2.0 running a CPG controller
  *
  *  Created on: Oct 29, 2024
- *      Author: Séverin Konishi
+ *      Author: Severin Konishi
  *
  * How to use:
  * "python Plotter.py"              will run the CPG controller with the parameters specified below (and display an animation)
@@ -91,38 +91,39 @@ def shell_thread():
     global user_stop, stop_shell, controller
     while (not stop_shell) and not (user_stop):
         command = input("[CPG]$ ")
-        if command == "exit" or command == "stop":
+        command = command.split(" ")
+        if command[0] == "exit" or command[0] == "stop":
             user_stop = True
             stop_shell = True
             break
         elif len(command) == 0:
             continue
-        elif len(command.split(" ")) == 2:
-            name = command.split(" ")[0]
-            value = float(command.split(" ")[1])
+        elif len(command) == 3 and command[0] == "cpg":
+            name = command[1]
+            value = float(command[2])
             if name == "freq":
                 controller.set_frequency(value)
-                shell_queue.put("[Plotter] frequency {0}".format(value))
+                shell_queue.put("[CPG] frequency {0}".format(value))
             elif name == "dir":
                 controller.set_direction(value)
-                shell_queue.put("[Plotter] direction {0}".format(value))
+                shell_queue.put("[CPG] direction {0}".format(value))
             elif name == "amplc":
                 controller.set_amplc(value)
-                shell_queue.put("[Plotter] amplc {0}".format(value))
+                shell_queue.put("[CPG] amplc {0}".format(value))
             elif name == "amplh":
                 controller.set_amplh(value)
-                shell_queue.put("[Plotter] amplh {0}".format(value))
+                shell_queue.put("[CPG] amplh {0}".format(value))
             elif name == "nwave":
                 controller.set_nwave(value)
-                shell_queue.put("[Plotter] nwave {0}".format(value))
+                shell_queue.put("[CPG] nwave {0}".format(value))
             elif name == "coupling":
                 controller.set_coupling_strength(value)
-                shell_queue.put("[Plotter] coupling {0}".format(value))
+                shell_queue.put("[CPG] coupling {0}".format(value))
             elif name == "ar":
                 controller.set_a_r(value)
-                shell_queue.put("[Plotter] ar {0}".format(value))
+                shell_queue.put("[CPG] ar {0}".format(value))
             else:
-                print("Unrecognized variable name")
+                print("Unrecognized command or wrong number of arguments")
         else:
             print("Unrecognized command")
 
