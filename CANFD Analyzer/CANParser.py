@@ -1,3 +1,10 @@
+"""
+ * CANFDParser.py
+ *
+ *  Created on: Jan 21, 2025
+ *      Author: Severin Konishi
+"""
+
 #Class used to retrieve CANFD packets from oscilloscope readings
 class CANFDParser:
     def __init__(self):

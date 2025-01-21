@@ -1,3 +1,10 @@
+"""
+ * main.py
+ *
+ *  Created on: Jan 21, 2025
+ *      Author: Severin Konishi
+"""
+
 from Oscilloscope import Oscilloscope
 from CANParser import CANFDParser
 import sys

@@ -24,7 +24,7 @@ from LogLib import LogFile
 #===== USER PARAMETERS ===== #
 #=========================== #
 # === Hyper parameters === #
-number_modules = 4      # number of modules/joints (at least 1), does not include the tail or the head
+number_modules = 3      # number of modules/joints (at least 1), does not include the tail or the head
 
 # === default CPG parameters === #
 frequency = 1           # oscillator frequency
@@ -49,7 +49,7 @@ plot_energy = True          # Plot the energy consumption (if in input file), On
 plot_energy_window = 5000   # The last X ms are plotted during live plotting
 fps = 30                    # animation frames per seconds (higher is more expensive)
 speed = 1                   # animation speed multiplier (higher is more expensive)
-duration = 30               # animation duration in seconds
+duration = 10               # animation duration in seconds
 
 #============================#
 #===== GLOBAL VARIABLES =====#

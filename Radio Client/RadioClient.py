@@ -1,3 +1,10 @@
+"""
+ * RadioClient.py
+ *
+ *  Created on: Jan 21, 2025
+ *      Author: Severin Konishi
+"""
+
 import serial
 import sys
 import time
@@ -30,6 +37,20 @@ help_print = [{"command": "getb ADDRESS", "description": "Reads an 8 bits regist
               {"command": "monitorb ADDRESS FREQUENCY", "description": "Reads the 8 bits register at the given frequency"},
               {"command": "monitorw ADDRESS FREQUENCY", "description": "Reads the 16 bits register at the given frequency"},
               {"command": "monitordw ADDRESS FREQUENCY", "description": "Reads the 32 bits register at the given frequency"},
+              {"command": "robot start", "description": "Enable the motors"},
+              {"command": "robot stop", "description": "Disable the motors"},
+              {"command": "cpg start", "description": "Start the CPG controller"},
+              {"command": "cpg stop", "description": "Stop the CPG controller"},
+              {"command": "cpg freq VALUE", "description": "Set the CPG frequency"},
+              {"command": "cpg dir VALUE", "description": "Set the CPG direction"},
+              {"command": "cpg amplc VALUE", "description": "Set the CPG amplc"},
+              {"command": "cpg amplh VALUE", "description": "Set the CPG amplh"},
+              {"command": "cpg nwave VALUE", "description": "Set the CPG nwave"},
+              {"command": "cpg coupling VALUE", "description": "Set the CPG coupling strength"},
+              {"command": "cpg ar VALUE", "description": "Set the CPG ar"},
+              {"command": "cpg dirmax VALUE", "description": "Set the CPG dirmax"},
+              {"command": "cpg amplcmax VALUE", "description": "Set the CPG amplcmax"},
+              {"command": "cpg amplhmaxVALUE", "description": "Set the CPG amplhmax"},
               {"command": "stmreset", "description": "Resets the STM32"},
               {"command": "watercheck FREQUENCY", "description": "monitors the water alert register and tell the user if a leak is detected"},
               {"command": "exit", "description": "Close the shell"},
@@ -39,7 +60,7 @@ help_print = [{"command": "getb ADDRESS", "description": "Reads an 8 bits regist
 class PCRadio:
     def __init__(self, port):
         self.serial = serial.Serial(port, 56800, timeout=1.0)
-        #synchronize with radio
+        #synchronize with USB radio dongle
         while(1):
             for i in range(16):
                 self.serial.write(0xFF.to_bytes(1))
@@ -55,6 +76,7 @@ class PCRadio:
     def __del__(self):
         self.serial.close()
     
+    #change the USB dongle radio channel
     def set_channel(self, channel):
         #write the channel
         self.serial.write(0x13.to_bytes(1))
@@ -70,6 +92,7 @@ class PCRadio:
             return True
         return False
     
+    #read an 8 bits register
     def reg_read_8(self, address):
         op = 0x00
         self.serial.write((op<<2 | address>>8).to_bytes(1))
@@ -78,7 +101,8 @@ class PCRadio:
             return None
         else:
             return self.serial.read(1)[0]
-        
+    
+    #read a 16 bits register as signed int
     def reg_read_16(self, address):
         op = 0x01
         self.serial.write((op<<2 | address>>8).to_bytes(1))
@@ -87,7 +111,8 @@ class PCRadio:
             return None
         else:
             return int.from_bytes(self.serial.read(2), byteorder='little', signed=True)
-        
+    
+    #read a 32 bits register as signed int
     def reg_read_32(self, address):
         op = 0x02
         self.serial.write((op<<2 | address>>8).to_bytes(1))
@@ -96,7 +121,8 @@ class PCRadio:
             return None
         else:
             return int.from_bytes(self.serial.read(4), byteorder='little', signed=True)
-        
+    
+    #read a 32 bits register as float
     def reg_read_float(self, address):
         op = 0x02
         self.serial.write((op<<2 | address>>8).to_bytes(1))
@@ -106,6 +132,7 @@ class PCRadio:
         else:
             return struct.unpack('f', self.serial.read(4))[0]
     
+    #write an 8 bits register
     def reg_write_8(self, address, value):
         op = 0x04
         self.serial.write((op<<2 | address>>8).to_bytes(1))
@@ -115,7 +142,8 @@ class PCRadio:
             return None
         else:
             return True
-        
+    
+    #write a 16 bits register
     def reg_write_16(self, address, value):
         op = 0x05
         self.serial.write((op<<2 | address>>8).to_bytes(1))
@@ -125,7 +153,8 @@ class PCRadio:
             return None
         else:
             return True
-        
+    
+    #write a 32 bits register
     def reg_write_32(self, address, value):
         op = 0x06
         self.serial.write((op<<2 | address>>8).to_bytes(1))
@@ -135,7 +164,8 @@ class PCRadio:
             return None
         else:
             return True
-        
+    
+    #write a float to a 32 bits register
     def reg_write_float(self, address, value):
         op = 0x06
         self.serial.write((op<<2 | address>>8).to_bytes(1))
@@ -180,7 +210,8 @@ if __name__ == "__main__":
             if(command[0] == "exit"):
                 stop_shell = True
                 break
-
+            
+            #check if the UART buffer is still synchronized (for debug)
             elif(command[0] == "sync"):
                 value = radio.serial.in_waiting
                 if(value > 0):

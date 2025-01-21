@@ -1,3 +1,9 @@
+"""
+ * Oscilloscope.py
+ *
+ *  Created on: Jan 21, 2025
+ *      Author: Severin Konishi
+"""
 import pyvisa as visa
 import numpy as np
 
