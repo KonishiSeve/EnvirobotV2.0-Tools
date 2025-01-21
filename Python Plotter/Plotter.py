@@ -2,7 +2,7 @@
  * CPGPlotter.py
  * This file is a visualizer of Envirobot V2.0 running a CPG controller
  *
- *  Created on: Oct 29, 2024
+ *  Created on: Jan 21, 2024
  *      Author: Severin Konishi
  *
  * How to use:
