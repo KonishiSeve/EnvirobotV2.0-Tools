@@ -1,9 +1,8 @@
-##Envirobot Radio PC client V2.0
+# Envirobot Radio PC client V2.0
 
 This folder contains a Python script to interact with the Envirobot V2.0 registers through its radio interface. This should be ran on a PC with an appropriate USB radio dongle.
+Command: **python RadioClient.py -c 81 -p COM3** (with 81 being the radio channel and COM3 the virtual COM port (VCP) of the USB radio dongle)
 
-The client is started with this command: **python RadioClient.py -c 81 -p COM3**
-with 81 being the radio channel and COM3 the virtual COM port (VCP) of the USB radio dongle.
 The user can then enter commands to interact with the robot registers.
 the “help” command can be used to print the full list of supported commands and their corresponding descriptions.
 
