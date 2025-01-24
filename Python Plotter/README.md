@@ -13,6 +13,17 @@ Once the plotter is started, if the "plot_robot_pose" option is enabled, a real-
 Once the user stopped the plotter or the max "duration" has been hit. Plots of the CPG states of all the oscillators is shown if the "plot_cpg_states" is enabled.
 A .csv log file, is created if the "file_save" option is enabled.
 
+The shell commands supported are listed here:
+- **exit** or **stop**: stops the simulation
+- **cpg freq VALUE**: change the CPG frequency parameter
+- **cpg dir VALUE**: change the CPG direction parameter
+- **cpg amplc VALUE**: change the CPG amplc parameter
+- **cpg amplh VALUE**: change the CPG amplh parameter
+- **cpg nwave VALUE**: change the CPG nwave parameter
+- **cpg coupling VALUE**: change the CPG coupling strength
+- **cpg ar VALUE**: change the CPG ar parameter
+
+![](BasicPlotterDemo.png)
 
 ### Read CPG from a file and plot
 To plot from .csv log file, the plotter can be started with this command: **python Plotter.py logfile.csv**
@@ -23,3 +34,5 @@ Once the end of the log file is reached, the full power and energy consumption p
 It is not possible to plot the CPG oscillator states when reading from a log file.
 
 If the .csv log file was created by the CM4 logger, there might be long pauses where nothing seems to happen. This is due to the fact that the log starts logging as soon as the robot is started (with the REG_REMOTE_MODE register). If the user waited some time between the remote starting the robot and pushing the joystick forward, this delay will be "shown" by the plotter.
+
+![](PlotterReplayDemo.png)
